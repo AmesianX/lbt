@@ -17,7 +17,7 @@ StringRef ToolName;
 static std::string TripleName = "";
 static std::string MCPU = "";
 
-void DisAs::reportError(const Twine &Message) {
+void DisAs::reportError(const Twine &Message) const {
   outs().flush();
   WithColor::error(errs(), ToolName) << ": " << Message << "\n";
   exit(1);
@@ -39,17 +39,13 @@ void DisAs::initLLVM() {
 //   TripleName
 // Input:
 //   TheTriple
-const Target *DisAs::getTarget() {
-  // Figure out the target triple.
-  static Triple TheTriple("cpu0--");
+const Target *DisAs::getTarget(const Triple TheTriple) const {
   // Get the target specific parser.
+  Triple Triple2 = TheTriple;;
   std:: string Error;
-  const Target *TheTarget = TargetRegistry::lookupTarget("", TheTriple, Error);
+  const Target *TheTarget = TargetRegistry::lookupTarget("", Triple2, Error);
   if (!TheTarget)
     reportError("Can't find target: " + Error);
-
-  // Update the triple name and return the found target.
-  TripleName = TheTriple.getTriple();
 
   return TheTarget;
 }
@@ -75,8 +71,11 @@ const MCSubtargetInfo *DisAs::createSTI(const Target *TheTarget) {
 // Important! Remember that certain objects, such as Ctx, must exist outside
 // the scope of the `create()` function. Do not declare them as local variables
 // with `create()`, or they will be destroyed after the function exists.
-void DisAs::create() {
-  TheTarget = getTarget();
+void DisAs::create(const Triple TheTriple) {
+  // Update the triple name and return the found target.
+  TripleName = TheTriple.getTriple();
+
+  TheTarget = getTarget(TheTriple);
   MRI = TheTarget->createMCRegInfo(TripleName);
   if (!MRI)
     reportError("no register info for target " + TripleName);
@@ -122,7 +121,7 @@ void DisAs::create() {
 //   Inst
 // Input:
 //   Hex
-bool DisAs::getInstruction(const ArrayRef<uint8_t> Bytes, MCInst &Inst) {
+bool DisAs::getInstruction(const ArrayRef<uint8_t> Bytes, MCInst &Inst) const {
 #if 0
   outs() << "Bytes size: " << Bytes.size() << "\n";
   dumpBytes(Bytes, outs());
@@ -146,7 +145,7 @@ bool DisAs::getInstruction(const ArrayRef<uint8_t> Bytes, MCInst &Inst) {
 //   RSO
 // Input:
 //   Bytes   
-bool DisAs::disassemble(const ArrayRef<uint8_t> Bytes, llvm::raw_string_ostream &RSO) {
+bool DisAs::disassemble(const ArrayRef<uint8_t> Bytes, llvm::raw_string_ostream &RSO) const {
   MCInst Inst;
   bool Disassembled = getInstruction(Bytes, Inst);
   if (Disassembled) {
@@ -158,7 +157,7 @@ bool DisAs::disassemble(const ArrayRef<uint8_t> Bytes, llvm::raw_string_ostream 
 
 // Initialize LLVM targets and components, and create both MCDisassembler
 // (DisAsm) and MCInstPrinter(IP) for the "disassembler task".
-DisAs::DisAs() {
+DisAs::DisAs(const Triple TheTriple) {
   initLLVM();
-  create();
+  create(TheTriple);
 }

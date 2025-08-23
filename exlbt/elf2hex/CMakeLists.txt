@@ -12,6 +12,7 @@ set(LLVM_LINK_COMPONENTS
 
 add_llvm_tool(elf2hex
   elf2hex.cpp
+  ../dishex/disas.cpp
   )
 
 if(HAVE_LIBXAR)

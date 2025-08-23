@@ -2,47 +2,61 @@
 
 #include "llvm/Support/InitLLVM.h"
 
+#include <string.h>
 #include <fstream>
 #include <iostream>
+#include <algorithm>
+
+// https://llvm.org/docs/CommandLine.html
+static cl::OptionCategory DishexCat("dishex Options");
+
+static cl::opt<Endian>
+    EndianOpt("endian",
+        cl::Required,
+        cl::desc("Choose Endian"),
+        cl::values(
+            clEnumValN(Big, "big", "Big Endian"),
+            clEnumValN(Little, "little", "Litte Endian")),
+        cl::cat(DishexCat));
+
+static cl::list<std::string> InputFilenames(cl::Positional,
+                                           cl::desc("<input object files>"),
+                                           cl::ZeroOrMore,
+                                           cl::cat(DishexCat));
 
 extern StringRef ToolName;
 
-static void reportCommandUsage() {
-  outs() << "Usage:\n"
-         << "  dishex, or"
-         << "  dishex hex-input-file\n";
-  outs().flush();
+HexToAsm *DisAsm;
+
+static void disassembleFile(std::string Filename) {
+  std::ifstream Infile(Filename);
+  DisAsm->run(Infile);
+  Infile.close();
 }
 
-// Usage:
-//   "dishex" or
-//   "dishex < input.hex" or
-//   "dishex input.hex
+// Usage: See help as follows:
+// ~/llvm/test/build/bin/dishex --help
 int main (int argc, char **argv) {
   using namespace llvm;
   InitLLVM X(argc, argv);
 
+  cl::HideUnrelatedOptions(DishexCat);
+  cl::ParseCommandLineOptions(argc, argv, "disassemble hex input\n", nullptr,
+                              /*EnvVar=*/nullptr,
+                              /*LongOptionsUseDoubleDash=*/true);
+
   ToolName = argv[0];
-  std::string InputFileName;
 
-  if (argc > 2) {
-    reportCommandUsage();
-  } else if (argc == 2) {
-    InputFileName = argv[1];
-  } else {
-    InputFileName = "";
-  }
-
-  HexToAsm DisAsm;
-  if (InputFileName == "") {
+  DisAsm = new HexToAsm(EndianOpt);
+  if (InputFilenames.size() == 0) {
     // Input from the keyboard ("dishex") or
     // redirect from a file ("dishex < input.hex")
-    DisAsm.run(std::cin);
+    DisAsm->run(std::cin);
   } else {
-    // Input from a file ("dishex input.hex")
-    std::ifstream Infile(InputFileName);
-    DisAsm.run(Infile);
-    Infile.close();
+    // Input from files (e.g. "dishex 1.hex 2.hex")
+    std::for_each(InputFilenames.begin(), InputFilenames.end(),
+                  disassembleFile);
+    //std::for_each(InputFilenames, disassembleFile);
   }
 
   return EXIT_SUCCESS;

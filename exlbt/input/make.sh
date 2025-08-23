@@ -32,20 +32,29 @@ build_newlib() {
   popd
 }
 
-prologue() {
-  if [ $ARG_NUM == 0 ]; then
-    echo "useage: bash $sh_name cpu_type ENDIAN"
+checkCommand() {
+  echo "ARG_NUM: $ARG_NUM"
+  if [ $ARG_NUM != 3 ]; then
+    echo "useage: bash make.sh cpu_type endian makefilename"
     echo "  cpu_type: cpu032I or cpu032II"
-    echo "  ENDIAN: be (big ENDIAN, default) or le (little ENDIAN)"
+    echo "  endian: be (big ENDIAN, default) or le (little ENDIAN)"
+    echo "  makefilename: e.g. Makefile.slinker"
     echo "for example:"
-    echo "  bash build-slinker.sh cpu032I eb"
+    echo "  make.sh cpu032I el Makefile.slinker"
     exit 1;
   fi
   if [ $CPU != cpu032I ] && [ $CPU != cpu032II ]; then
     echo "1st argument is cpu032I or cpu032II"
     exit 1
   fi
+  if [ ! -f "$FILE" ]; then
+    echo "$FILE does not exists."
+    exit 0;
+  fi
 
+}
+
+prologue() {
   INCDIR=../../lbdex/input
   OS=`uname -s`
   echo "OS =" ${OS}
@@ -98,11 +107,7 @@ epilogue() {
 
 FILE=$3
 
-if [ ! -f "$FILE" ]; then
-  echo "$FILE does not exists."
-  exit 0;
-fi
-
+checkCommand
 prologue;
 
 make -f $FILE CPU=${CPU} ENDIAN=${ENDIAN} LBDEX_DIR=${LBDEX_DIR} NEWLIB_DIR=${NEWLIB_DIR} clean

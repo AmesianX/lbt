@@ -5,21 +5,32 @@
 #include <iostream>
 
 
-HexToAsm::HexToAsm() {}
+HexToAsm::HexToAsm(int Cpu0Endian) {
+  std::string Str;
+
+  if (Cpu0Endian == Big) {
+    Str = "cpu0--";
+  } else if (Cpu0Endian == Little) {
+    Str = "cpu0el--";
+  }
+  Triple TheTriple(Str);
+  
+  this->Disas = new DisAs(TheTriple);
+}
 
 // Outpu:
 //   TheTarget
 // Input:
 //   TheTriple
-const Target *HexToAsm::getTarget() {
+const Target *HexToAsm::getTarget(Triple &TheTriple) const {
   // Get the target specific parser.
-  const Target *TheTarget = this->Disas.getTarget();
+  const Target *TheTarget = this->Disas->getTarget(TheTriple);
 
   return TheTarget;
 }
 
-void HexToAsm::reportError(const Twine &Message) {
-  Disas.reportError(Message);
+void HexToAsm::reportError(const Twine &Message) const {
+  Disas->reportError(Message);
 }
 
 // Hex -> Vectory<unsigned char>
@@ -28,7 +39,7 @@ void HexToAsm::reportError(const Twine &Message) {
 //   VByte
 // Input:
 //   Hex
-void HexToAsm::hexToBytes(const std::string &Hex, std::vector<uint8_t> &VByte) {
+void HexToAsm::hexToBytes(const std::string &Hex, std::vector<uint8_t> &VByte) const {
   int Size = 8;
   for (int i = 0; i < Size; i+=2) {
     // Convert byte[i..i+1] to uint8_t and save to Byte[i/2]
@@ -65,7 +76,7 @@ void HexToAsm::hexToBytes(const std::string &Hex, std::vector<uint8_t> &VByte) {
 // Return true if `Line` consists of hexadecimal numbers seperated by spaces.
 //   true:  if all c in `Line` are [0..0,A..F,a..f,' ']
 //   false: others
-bool HexToAsm::checkInput(std::string &Line) {
+bool HexToAsm::checkInput(std::string &Line) const {
   size_t Size = 8;
   size_t Length = 0;
   for (char c : Line) {
@@ -104,13 +115,13 @@ bool HexToAsm::checkInput(std::string &Line) {
 //   RSO
 // Input:
 //   Line   
-bool HexToAsm::disassemble(std::string &Line, llvm::raw_string_ostream &RSO) {
+bool HexToAsm::disassemble(std::string &Line, llvm::raw_string_ostream &RSO) const {
   Line.erase(std::remove(Line.begin(), Line.end(), ' '), Line.end());
   int Length = 4;
   std::vector<uint8_t> VByte(Length, 0x0); // Eight uint8_t with value 0x0
   hexToBytes(Line, VByte);
   ArrayRef<uint8_t> Bytes(VByte);
-  bool Disassembled = Disas.disassemble(Bytes, RSO);
+  bool Disassembled = Disas->disassemble(Bytes, RSO);
 
   return Disassembled;
 }
@@ -121,7 +132,7 @@ bool HexToAsm::disassemble(std::string &Line, llvm::raw_string_ostream &RSO) {
 //   Asm
 // Input:
 //   Line
-void HexToAsm::run(std::istream &Is) {
+void HexToAsm::run(std::istream &Is) const {
   std::string Line;
   std::string Asm;
   llvm::raw_string_ostream RSO(Asm);

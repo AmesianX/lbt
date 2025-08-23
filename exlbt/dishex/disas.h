@@ -18,15 +18,15 @@ using namespace llvm::object;
 
 class DisAs {
 public:
-  DisAs();
-  bool disassemble(const ArrayRef<uint8_t> Bytes, llvm::raw_string_ostream &RSO);
-  bool getInstruction(const ArrayRef<uint8_t> Bytes, MCInst &Inst);
-  const Target *getTarget();
-  void reportError(const Twine &Message);
+  DisAs(const Triple TheTriple);
+  bool disassemble(const ArrayRef<uint8_t> Bytes, llvm::raw_string_ostream &RSO) const;
+  bool getInstruction(const ArrayRef<uint8_t> Bytes, MCInst &Inst) const;
+  const Target *getTarget(const Triple TheTriple) const;
+  void reportError(const Twine &Message) const;
 
 private:
   void initLLVM();
-  void create();
+  void create(const Triple TheTriple);
   const MCSubtargetInfo *createSTI(const Target *TheTarget);
 
   std::unique_ptr<MCDisassembler> DisAsm;

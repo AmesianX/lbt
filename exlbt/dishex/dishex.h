@@ -12,18 +12,23 @@ using namespace llvm;
 
 using namespace llvm::object;
 
+enum Endian {
+  Big,
+  Little
+};
+
 class HexToAsm {
 public:
-  HexToAsm();
-  void run(std::istream &Is);
-  void reportError(const Twine &Message);
+  HexToAsm(int Cpu0Endian);
+  void run(std::istream &Is) const;
+  void reportError(const Twine &Message) const;
 
 private:
-  const Target *getTarget();
-  bool checkInput(std::string &Line);
-  void hexToBytes(const std::string &Hex, std::vector<uint8_t> &Byte);
-  bool disassemble(std::string &Line, llvm::raw_string_ostream &RSO);
+  const Target *getTarget(Triple &TheTriple) const;
+  bool checkInput(std::string &Line) const;
+  void hexToBytes(const std::string &Hex, std::vector<uint8_t> &Byte) const;
+  bool disassemble(std::string &Line, llvm::raw_string_ostream &RSO) const;
 
-  DisAs Disas;
+  const DisAs *Disas;
 };
 #endif // LIVM_TOOLS_DIS_HEX_DIS_HEX_H

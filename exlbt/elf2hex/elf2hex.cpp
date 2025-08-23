@@ -28,13 +28,12 @@
 #include "llvm/MC/MCTargetOptions.h"
 #include "llvm/Object/MachO.h"
 #include "llvm/Support/InitLLVM.h"
-#include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/TargetSelect.h"
 
 using namespace llvm;
 using namespace llvm::object;
 
-static StringRef ToolName;
+extern StringRef ToolName;
 static StringRef CurrInputFile;
 
 // copy from llvm-objdump.cpp
@@ -62,23 +61,6 @@ static cl::list<std::string> InputFilenames(cl::Positional,
                                             cl::cat(Elf2hexCat));
 std::string TripleName = "";
                                             
-static const Target *getTarget(const ObjectFile *Obj) {
-  // Figure out the target triple.
-  Triple TheTriple("unknown-unknown-unknown");
-  TheTriple = Obj->makeTriple();
-
-  // Get the target specific parser.
-  std::string Error;
-  const Target *TheTarget = TargetRegistry::lookupTarget("", TheTriple,
-                                                         Error);
-  if (!TheTarget)
-    reportError(Obj->getFileName(), "can't find target: " + Error);
-
-  // Update the triple name and return the found target.
-  TripleName = TheTriple.getTriple();
-  return TheTarget;
-}
-
 bool isRelocAddressLess(RelocationRef A, RelocationRef B) {
   return A.getOffset() < B.getOffset();
 }
@@ -173,13 +155,22 @@ uint64_t SectionOffset(const ObjectFile *o, StringRef secName) {
   return 0;
 }
 
+static const Triple getTriple(const ObjectFile *Obj) {
+  // Figure out the target triple.
+  static Triple TheTriple("unknown-unknown-unknown");
+  TheTriple = Obj->makeTriple();
+
+  return TheTriple;
+}
+
 using namespace llvm::elf2hex;
 
 Reader reader;
 
-VerilogHex::VerilogHex(std::unique_ptr<MCInstPrinter>& instructionPointer, 
-  std::unique_ptr<const MCSubtargetInfo>& subTargetInfo, const ObjectFile *Obj) :
-  IP(instructionPointer), STI(subTargetInfo) {
+VerilogHex::VerilogHex(const ObjectFile *Obj) {
+  const Triple TheTriple = getTriple(Obj);
+  this->Disas = new DisAs(TheTriple);
+
   lastDumpAddr = 0;
 #ifdef ELF2HEX_DEBUG
   //uint64_t startAddr = GetSectionHeaderStartAddress(Obj, "_start");
@@ -264,7 +255,9 @@ void VerilogHex::Fill0s(uint64_t startAddr, uint64_t endAddr) {
   return;
 }
 
-void VerilogHex::ProcessDisAsmInstruction(MCInst inst, uint64_t Size, 
+// Print {/*memory-address*/, hex instruction, /* assembly instruction */}
+// e.g. /*   20840:*/   ff ff 70 0f/*   lui     $7, 65535*/
+void VerilogHex::ProcessDisAsmInstruction(uint64_t Size, 
                                 ArrayRef<uint8_t> Bytes, const ObjectFile *Obj) {
   SectionRef Section = reader.CurrentSection();
   StringRef Name;
@@ -311,11 +304,12 @@ void VerilogHex::ProcessDisAsmInstruction(MCInst inst, uint64_t Size,
   outs() << "\t";
   dumpBytes(Bytes.slice(Index, Size), outs());
 
-  outs() << "/*";
-  // print disassembly instruction to outs()
-  IP->printInst(&inst, 0, "", *STI, outs());
-  outs() << "*/";
-  outs() << "\n";
+  // Disassemble and print disassembly instruction to Asm
+  std::string Asm;
+  llvm::raw_string_ostream RSO(Asm);
+  Disas->disassemble(Bytes.slice(Index), RSO); 
+
+  outs() << "/* " << Asm << "*/\n";
 
   // In section .plt or .text, the Contents.size() maybe < (SectionAddr + Index + 4)
   if (Contents.size() < (SectionAddr + Index + 4))
@@ -353,6 +347,11 @@ void VerilogHex::ProcessDataSection(SectionRef Section) {
   }
 }
 
+// Print data section as the following form:
+// /*Contents of section :*/
+// /*   100d4 */6a 75 73 74  69 66 3a 20  22 25 31 30  73 22 0a 00 /*  justif: "%10s"..*/
+// /*   100e4 */68 65 78 20  25 30 32 78  20 3d 20 30  30 0a 00 74 /*  hex %02x = 00..t*/
+// ...
 void VerilogHex::PrintDataSection(SectionRef Section) {
   std::string Error;
   StringRef Name;
@@ -420,11 +419,8 @@ uint64_t Reader::CurrentIndex() {
 }
 
 // Porting from DisassembleObject() of llvm-objump.cpp
-void Reader::DisassembleObject(const ObjectFile *Obj
-/*, bool InlineRelocs*/  , std::unique_ptr<MCDisassembler>& DisAsm, 
-  std::unique_ptr<MCInstPrinter>& IP,
-  std::unique_ptr<const MCSubtargetInfo>& STI) {
-  VerilogHex hexOut(IP, STI, Obj);
+void Reader::DisassembleObject(const ObjectFile *Obj) {
+  VerilogHex hexOut(Obj);
   std::error_code ec;
   for (const SectionRef &Section : Obj->sections()) {
     _section = Section;
@@ -501,7 +497,7 @@ void Reader::DisassembleObject(const ObjectFile *Obj
     ArrayRef<uint8_t> Bytes(reinterpret_cast<const uint8_t *>(BytesStr.data()),
                             BytesStr.size());
 #endif
-    uint64_t Size;
+    const uint64_t Size = 4;
     SectSize = Section.getSize();
 
     // Disassemble symbol by symbol.
@@ -520,16 +516,10 @@ void Reader::DisassembleObject(const ObjectFile *Obj
         continue;
       }
 
+      // Now this section is ".text" section, so disassemble binary instructions
+      // into assembly instructions
       for (Index = Start; Index < End; Index += Size) {
-        MCInst Inst;
-        if (DisAsm->getInstruction(Inst, Size, Bytes.slice(Index),
-                                   SectionAddr + Index, CommentStream)) {
-          hexOut.ProcessDisAsmInstruction(Inst, Size, Bytes, Obj);
-        } else {
-          errs() << ToolName << ": warning: invalid instruction encoding\n";
-          if (Size == 0)
-            Size = 1; // skip illegible bytes
-        }
+        hexOut.ProcessDisAsmInstruction(Size, Bytes, Obj);
       } // for
     } // for
   }
@@ -537,54 +527,7 @@ void Reader::DisassembleObject(const ObjectFile *Obj
 
 // Porting from disassembleObject() of llvm-objump.cpp
 static void Elf2Hex(const ObjectFile *Obj) {
-
-  const Target *TheTarget = getTarget(Obj);
-
-  // Package up features to be passed to target/subtarget
-  SubtargetFeatures Features = Obj->getFeatures();
-
-  std::unique_ptr<const MCRegisterInfo> MRI(TheTarget->createMCRegInfo(TripleName));
-  if (!MRI)
-    report_fatal_error("error: no register info for target " + TripleName);
-
-  // Set up disassembler.
-  MCTargetOptions MCOptions;
-  std::unique_ptr<const MCAsmInfo> AsmInfo(
-    TheTarget->createMCAsmInfo(*MRI, TripleName, MCOptions));
-  if (!AsmInfo)
-    report_fatal_error("error: no assembly info for target " + TripleName);
-
-  std::unique_ptr<const MCSubtargetInfo> STI(
-    TheTarget->createMCSubtargetInfo(TripleName, "", Features.getString()));
-  if (!STI)
-    report_fatal_error("error: no subtarget info for target " + TripleName);
-
-  std::unique_ptr<const MCInstrInfo> MII(TheTarget->createMCInstrInfo());
-  if (!MII)
-    report_fatal_error("error: no instruction info for target " + TripleName);
-
-  MCObjectFileInfo MOFI;
-  MCContext Ctx(AsmInfo.get(), MRI.get(), &MOFI);
-  // FIXME: for now initialize MCObjectFileInfo with default values
-  MOFI.InitMCObjectFileInfo(Triple(TripleName), false, Ctx);
-
-  std::unique_ptr<MCDisassembler> DisAsm(
-    TheTarget->createMCDisassembler(*STI, Ctx));
-  if (!DisAsm)
-    report_fatal_error("error: no disassembler for target " + TripleName);
-
-  std::unique_ptr<const MCInstrAnalysis> MIA(
-      TheTarget->createMCInstrAnalysis(MII.get()));
-
-  int AsmPrinterVariant = AsmInfo->getAssemblerDialect();
-  std::unique_ptr<MCInstPrinter> IP(TheTarget->createMCInstPrinter(
-      Triple(TripleName), AsmPrinterVariant, *AsmInfo, *MII, *MRI));
-  if (!IP)
-    report_fatal_error("error: no instruction printer for target " +
-                       TripleName);
-
-  std::error_code EC;
-  reader.DisassembleObject(Obj, DisAsm, IP, STI);
+  reader.DisassembleObject(Obj);
 }
 
 static void DumpObject(const ObjectFile *o) {
@@ -613,24 +556,11 @@ static void DumpInput(StringRef file) {
 }
 
 int main(int argc, char **argv) {
-  // Print a stack trace if we signal out.
-  //sys::PrintStackTraceOnErrorSignal(argv[0]);
-  //PrettyStackTraceProgram X(argc, argv);
-  //llvm_shutdown_obj Y;  // Call llvm_shutdown() on exit.
-
   using namespace llvm;
   InitLLVM X(argc, argv);
 
-  // Initialize targets and assembly printers/parsers.
-  llvm::InitializeAllTargetInfos();
-  llvm::InitializeAllTargetMCs();
-  llvm::InitializeAllDisassemblers();
-
-  // Register the target printer for --version.
-  cl::AddExtraVersionPrinter(TargetRegistry::printRegisteredTargetsForVersion);
-
+  cl::HideUnrelatedOptions(Elf2hexCat);
   cl::ParseCommandLineOptions(argc, argv, "llvm object file dumper\n");
-//  TripleName = Triple::normalize(TripleName);
 
   ToolName = argv[0];
 
