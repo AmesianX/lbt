@@ -247,7 +247,7 @@ void VerilogHex::Fill0s(uint64_t startAddr, uint64_t endAddr) {
   assert((startAddr <= endAddr) && "startAddr must <= BaseAddr");
   // Fill /*address*/ 00 00 00 00 for 4 bytes alignment (1 Cpu0 word size)
   for (addr = startAddr; addr < endAddr; addr += 4) {
-    outs() << format("/*%8" PRIx64 " */", addr);
+    outs() << format("/*%8" PRIx64  ":*/\t", addr);
     outs() << format("%02" PRIx64 " ", 0) << format("%02" PRIx64 " ", 0) \
     << format("%02" PRIx64 " ", 0) << format("%02" PRIx64 " ", 0) << '\n';
   }
@@ -369,7 +369,7 @@ void VerilogHex::PrintDataSection(SectionRef Section) {
   outs() << "/*Contents of section " << Name << ":*/\n";
   // Dump out the content as hex and printable ascii characters.
   for (std::size_t addr = 0, end = Contents.size(); addr < end; addr += 16) {
-    outs() << format("/*%8" PRIx64 " */", BaseAddr + addr);
+    outs() << format("/*%8:" PRIx64 ":*/\t", BaseAddr + addr);
     // Dump line of hex.
     for (std::size_t i = 0; i < 16; ++i) {
       if (i != 0 && i % 4 == 0)
