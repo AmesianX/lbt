@@ -247,6 +247,7 @@ htmlhelp_basename = 'lbtdoc'
 
 # -- Options for LaTeX output ---------------------------------------------
 
+latex_engine = 'xelatex'  # Use XeLaTeX for Unicode support
 latex_elements = {
      # The paper size ('letterpaper' or 'a4paper').
      #
@@ -263,6 +264,12 @@ latex_elements = {
      # Latex figure (float) alignment
      #
      # 'figure_align': 'htbp',
+
+    'preamble': r'''
+\usepackage{xeCJK}
+\setCJKmainfont{PingFang TC}
+'''
+
 }
 
 # Grouping the document tree into LaTeX files. List of tuples
@@ -306,7 +313,7 @@ latex_documents = [
 # (source start file, name, description, authors, manual section).
 man_pages = [
     (master_doc, 'LLVMToolchainCpu0', u'Tutorial: Creating an LLVM Toolchain for the Cpu0 Architecture',
-     [u'Chen Chung-Shu', u'Anoushe Jamshidi'], 1)
+     [u'Chen Chung-Shu'], 1)
 ]
 
 # If true, show URL addresses after external links.
